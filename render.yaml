@@ -3,6 +3,30 @@
 # One service, which is the entire argument of this project: the image contains the Vue
 # bundle and the API, so the URL Render hands back is the whole application rather than a
 # backend that needs a front end hosted somewhere else.
+#
+# -----------------------------------------------------------------------------------------
+# Read this before deploying: on the free plan the database does not survive.
+# -----------------------------------------------------------------------------------------
+#
+# A persistent disk requires a paid instance, and Render gives every deploy — and every wake
+# from sleep — a fresh filesystem. A free web service sleeps after 15 minutes without
+# traffic. So on the configuration below, SQLite lives in the container and every group is
+# gone the next time the service wakes.
+#
+# That is fine for showing the app works and genuinely bad for its actual purpose, which is
+# sending somebody a link. Three ways out, in order of effort:
+#
+#   1. Leave it. Free, and a visitor can create a group and settle it in one sitting. Links
+#      stop working once the service has been idle for a while.
+#
+#   2. Upgrade this service to Starter and attach a disk — uncomment the `disk:` block below
+#      and change `plan` to `starter`. SQLite then behaves exactly as it does locally.
+#
+#   3. Move to Postgres. Render's free Postgres is deleted after 30 days, so it would need a
+#      paid database or an external one. This also means swapping the EF provider and
+#      rewriting the SQLite-specific parts of DatabaseSchemaSetup.
+#
+# The README says the same thing in prose, so nobody discovers it by losing data.
 
 services:
   - type: web
@@ -13,28 +37,29 @@ services:
     dockerfilePath: ./Dockerfile
     dockerContext: .
 
-    # Render restarts and redeploys onto a fresh filesystem, so the SQLite file has to live
-    # on a disk that outlives the container. Without this every deploy would silently wipe
-    # every group — the app would look fine and simply be empty.
-    disk:
-      name: split-data
-      mountPath: /data
-      sizeGB: 1
+    # Uncomment together with `plan: starter` above to make the database survive restarts.
+    # disk:
+    #   name: split-data
+    #   mountPath: /data
+    #   sizeGB: 1
 
+    # Cheap, always available, and needs no account — so Render's checks never trip over a
+    # sleeping database or a signed-out user.
     healthCheckPath: /api/auth/me
 
     envVars:
       - key: ASPNETCORE_ENVIRONMENT
         value: Production
 
-      # Must point inside the mounted disk above.
+      # /data exists in the image whether or not a disk is mounted there, so this path is
+      # correct in both configurations: ephemeral on free, persistent once a disk is attached.
       - key: ConnectionStrings__Split
         value: Data Source=/data/split.db
 
-      # Google sign-in. Left unset here on purpose: sync false means Render asks for the
-      # value in the dashboard instead of reading it from this file, so the secret never
-      # goes anywhere near the repository. Leave them blank and the app still runs — sign-in
-      # switches itself off and everything else works anonymously.
+      # Google sign-in. Left unset on purpose: `sync: false` makes Render ask for the value
+      # in the dashboard rather than reading it from this file, so the secret never goes near
+      # the repository. Leave them blank and the app still runs — sign-in switches itself off
+      # and everything else works anonymously.
       - key: Authentication__Google__ClientId
         sync: false
       - key: Authentication__Google__ClientSecret

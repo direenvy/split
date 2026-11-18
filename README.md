@@ -107,14 +107,17 @@ docker run -p 8080:8080 -v split-data:/data split
 ```
 
 On [Render](https://render.com), [`render.yaml`](render.yaml) describes it: *New → Blueprint*,
-point it at this repository. Two things in there matter more than they look:
+point it at this repository. Render prompts for the two Google values, which are marked
+`sync: false` so the client secret never enters the repository — leave them blank and the app
+still runs, with sign-in switched off.
 
-- **The persistent disk.** Render gives each deploy a fresh filesystem, so without a disk
-  mounted at `/data` the SQLite file would be wiped on every restart — the app would keep
-  working and simply be empty, which is worse than failing.
-- **`sync: false` on the Google keys.** Render prompts for those in the dashboard instead of
-  reading them from the file, so the client secret never enters the repository. Leave them
-  blank and the app still runs; sign-in just turns itself off.
+**On the free plan the database does not survive.** A persistent disk needs a paid instance,
+every deploy gets a fresh filesystem, and a free service sleeps after 15 minutes without
+traffic — so SQLite lives inside the container and every group disappears the next time it
+wakes. Fine for showing the app works; no good for its actual purpose, which is sending
+somebody a link that still works tomorrow. To fix it, uncomment the `disk:` block in
+`render.yaml` and set `plan: starter`, and SQLite behaves exactly as it does locally.
+(Render's free Postgres is not a way around this: those are deleted 30 days after creation.)
 
 Afterwards, add the deployed callback to your Google OAuth client, alongside the localhost
 one:
