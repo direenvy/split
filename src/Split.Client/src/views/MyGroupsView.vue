@@ -22,6 +22,17 @@ const groups = ref<GroupSummary[]>([])
 const loading = ref(false)
 const error = ref<string | null>(null)
 
+/*
+  Which row is asking "are you sure?".
+
+  Two taps rather than a browser confirm(): a native dialog cannot be styled, blocks the whole
+  page, and on a destructive action the user is reading a system font popup rather than the
+  row they are about to destroy. Holding the state here, keyed by slug, means only one row can
+  be armed at a time.
+*/
+const confirming = ref<string | null>(null)
+const busySlug = ref<string | null>(null)
+
 const money = new Intl.NumberFormat('en-MY', {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
@@ -52,6 +63,48 @@ async function load() {
     error.value = caught instanceof ApiError ? caught.message : 'Could not load your groups.'
   } finally {
     loading.value = false
+  }
+}
+
+/**
+ * What the destructive button on a row does, which depends on whether you made the group.
+ *
+ * Creating a group is the only thing that grants the right to destroy it. For a group that
+ * was merely shared with you, the same button removes it from your list and leaves everyone
+ * else's copy alone — because a link you opened is not a thing you own.
+ */
+function removeLabel(group: GroupSummary): string {
+  return group.isCreator ? 'Delete' : 'Remove'
+}
+
+function confirmLabel(group: GroupSummary): string {
+  return group.isCreator ? 'Delete for everyone?' : 'Remove from list?'
+}
+
+async function remove(group: GroupSummary) {
+  if (confirming.value !== group.slug) {
+    confirming.value = group.slug
+    return
+  }
+
+  confirming.value = null
+  busySlug.value = group.slug
+  error.value = null
+
+  try {
+    if (group.isCreator) {
+      await api.deleteGroup(group.slug)
+    } else {
+      await api.forgetGroup(group.slug)
+    }
+
+    // Drop it locally rather than refetching: the server has already told us it worked, and
+    // a round trip here would make the row linger for no reason.
+    groups.value = groups.value.filter((row) => row.slug !== group.slug)
+  } catch (caught) {
+    error.value = caught instanceof ApiError ? caught.message : 'That did not work.'
+  } finally {
+    busySlug.value = null
   }
 }
 
@@ -94,7 +147,11 @@ onMounted(load)
     </StateNote>
 
     <ul v-else-if="hasGroups" class="list">
-      <li v-for="group in groups" :key="group.slug">
+      <li v-for="group in groups" :key="group.slug" class="row">
+        <!--
+          The link and the destructive button are siblings, not nested. A <button> inside an
+          <a> is invalid HTML and clicking it would navigate as well as delete.
+        -->
         <RouterLink :to="{ name: 'group', params: { slug: group.slug } }" class="card">
           <div class="card__main">
             <p class="card__name">{{ group.name }}</p>
@@ -106,6 +163,14 @@ onMounted(load)
 
           <span v-if="group.isCreator" class="card__badge label">Yours</span>
         </RouterLink>
+
+        <AppButton
+          variant="danger"
+          :busy="busySlug === group.slug"
+          @click="remove(group)"
+        >
+          {{ confirming === group.slug ? confirmLabel(group) : removeLabel(group) }}
+        </AppButton>
       </li>
     </ul>
   </div>
@@ -131,7 +196,19 @@ onMounted(load)
   gap: var(--space-2);
 }
 
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.row > :last-child {
+  flex-shrink: 0;
+}
+
 .card {
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;

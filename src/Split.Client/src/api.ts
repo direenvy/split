@@ -109,6 +109,21 @@ export const api = {
     return request<GroupSummary[]>('/api/groups/mine')
   },
 
+  /** Deletes the group for everybody. Only the creator may do this; others get a 403. */
+  deleteGroup(slug: string): Promise<{ deleted: boolean }> {
+    return request<{ deleted: boolean }>(`/api/groups/${encodeURIComponent(slug)}`, {
+      method: 'DELETE',
+    })
+  },
+
+  /** Drops the group out of my history. The group itself is untouched. */
+  forgetGroup(slug: string): Promise<{ removed: boolean }> {
+    return request<{ removed: boolean }>(
+      `/api/groups/${encodeURIComponent(slug)}/membership`,
+      { method: 'DELETE' },
+    )
+  },
+
   // --- the landing page demo ------------------------------------------------------------
 
   /**

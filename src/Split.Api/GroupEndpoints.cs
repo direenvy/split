@@ -16,6 +16,25 @@ public static class GroupEndpoints
     /// <summary>A group has to have at least this many people before splitting means anything.</summary>
     private const int MinimumMembers = 2;
 
+    /*
+      Length and size limits.
+
+      These are not paranoia about malicious input so much as about the database quietly
+      disagreeing with the code. EF declares these columns with HasMaxLength, but SQLite does
+      not enforce a column's declared length at all — it will happily store a 5000-character
+      description in a column declared as 200 and give no indication that anything is odd.
+      So the limits have to be checked here or they do not exist. They match the model.
+    */
+    private const int MaxGroupNameLength = 120;
+    private const int MaxPersonNameLength = 80;
+    private const int MaxDescriptionLength = 200;
+
+    /// <summary>
+    /// Past this the UI stops being usable long before the maths does, and settlement drops
+    /// off its exact path at 18 people anyway (see DebtSimplifier.ExactPartitionLimit).
+    /// </summary>
+    private const int MaxMembers = 50;
+
     public static void MapGroupEndpoints(this IEndpointRouteBuilder app)
     {
         RouteGroupBuilder api = app.MapGroup("/api/groups");
@@ -26,6 +45,8 @@ public static class GroupEndpoints
         api.MapPost("/{slug}/members", AddMember);
         api.MapPost("/{slug}/expenses", AddExpense);
         api.MapDelete("/{slug}/expenses/{expenseId:guid}", DeleteExpense);
+        api.MapDelete("/{slug}", DeleteGroup);
+        api.MapDelete("/{slug}/membership", ForgetGroup);
     }
 
     // -----------------------------------------------------------------------------------
@@ -41,10 +62,25 @@ public static class GroupEndpoints
             return Problem("A group needs a name.");
         }
 
+        if (name.Length > MaxGroupNameLength)
+        {
+            return Problem($"A group name can be at most {MaxGroupNameLength} characters.");
+        }
+
         string[] members = [.. (request.Members ?? []).Select(m => (m ?? string.Empty).Trim()).Where(m => m.Length > 0)];
         if (members.Length < MinimumMembers)
         {
             return Problem($"A group needs at least {MinimumMembers} people.");
+        }
+
+        if (members.Length > MaxMembers)
+        {
+            return Problem($"A group can have at most {MaxMembers} people.");
+        }
+
+        if (members.Any(m => m.Length > MaxPersonNameLength))
+        {
+            return Problem($"A name can be at most {MaxPersonNameLength} characters.");
         }
 
         if (members.Distinct(StringComparer.OrdinalIgnoreCase).Count() != members.Length)
@@ -53,7 +89,10 @@ public static class GroupEndpoints
         }
 
         string currency = (request.Currency ?? "MYR").Trim().ToUpperInvariant();
-        if (currency.Length != 3)
+
+        // Three *letters*, not merely three characters: "123" and "$%^" were both accepted
+        // before, and either would end up in front of every amount on the screen.
+        if (currency.Length != 3 || !currency.All(char.IsAsciiLetter))
         {
             return Problem("Currency must be a three-letter code, for example MYR.");
         }
@@ -206,6 +245,16 @@ public static class GroupEndpoints
             return Problem("A person needs a name.");
         }
 
+        if (name.Length > MaxPersonNameLength)
+        {
+            return Problem($"A name can be at most {MaxPersonNameLength} characters.");
+        }
+
+        if (group.Participants.Count >= MaxMembers)
+        {
+            return Problem($"A group can have at most {MaxMembers} people.");
+        }
+
         if (group.Participants.Any(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase)))
         {
             return Problem($"{name} is already in this group.");
@@ -237,6 +286,11 @@ public static class GroupEndpoints
         if (description.Length == 0)
         {
             return Problem("An expense needs a description.");
+        }
+
+        if (description.Length > MaxDescriptionLength)
+        {
+            return Problem($"A description can be at most {MaxDescriptionLength} characters.");
         }
 
         if (request.Amount <= 0m)
@@ -330,6 +384,85 @@ public static class GroupEndpoints
         await db.SaveChangesAsync();
 
         return Results.Ok(ToView(group));
+    }
+
+    /// <summary>
+    /// Deletes a group outright, for everybody, along with its people and expenses.
+    ///
+    /// <para>
+    /// Only whoever created it may do this, and that is the one place in the application
+    /// where <see cref="GroupMembership.IsCreator"/> grants anything. Everywhere else a
+    /// membership is history and nothing more. The distinction matters: a group is reachable
+    /// by its link, so anyone who has ever opened one has a membership row for it, and
+    /// without this check opening a link someone shared with you would be enough to destroy
+    /// their data.
+    /// </para>
+    ///
+    /// <para>
+    /// This is not a soft delete and there is no undo. The alternative — keeping deleted
+    /// groups around so they could be restored — means the link keeps working for everybody
+    /// else who has it, which is the opposite of what someone deleting a group wants.
+    /// </para>
+    /// </summary>
+    private static async Task<IResult> DeleteGroup(string slug, SplitDbContext db, HttpContext context)
+    {
+        User? user = await context.GetCurrentUser(db);
+        if (user is null)
+        {
+            return Results.Unauthorized();
+        }
+
+        ExpenseGroup? group = await db.Groups.FirstOrDefaultAsync(g => g.Slug == slug);
+        if (group is null)
+        {
+            return NotFound(slug);
+        }
+
+        bool isCreator = await db.GroupMemberships
+            .AnyAsync(m => m.UserId == user.Id && m.GroupId == group.Id && m.IsCreator);
+
+        if (!isCreator)
+        {
+            // Deliberately 403 and not 404: the caller can plainly see the group, so
+            // pretending it does not exist would only be confusing.
+            return Results.Json(
+                new { error = "Only whoever created this group can delete it. You can remove it from your list instead." },
+                statusCode: StatusCodes.Status403Forbidden);
+        }
+
+        // Participants, expenses and shares go with it through the cascade declared on each
+        // foreign key. The history rows do not cascade, since nothing links a membership to a
+        // group in the model, so they are cleared explicitly — otherwise every member would be
+        // left with a row pointing at a group that no longer exists.
+        await db.GroupMemberships.Where(m => m.GroupId == group.Id).ExecuteDeleteAsync();
+        await db.Groups.Where(g => g.Id == group.Id).ExecuteDeleteAsync();
+
+        return Results.Ok(new { deleted = true });
+    }
+
+    /// <summary>
+    /// Drops a group out of the caller's own history, leaving the group itself untouched.
+    /// This is what you get for a group somebody else created and shared with you.
+    /// </summary>
+    private static async Task<IResult> ForgetGroup(string slug, SplitDbContext db, HttpContext context)
+    {
+        User? user = await context.GetCurrentUser(db);
+        if (user is null)
+        {
+            return Results.Unauthorized();
+        }
+
+        ExpenseGroup? group = await db.Groups.FirstOrDefaultAsync(g => g.Slug == slug);
+        if (group is null)
+        {
+            return NotFound(slug);
+        }
+
+        await db.GroupMemberships
+            .Where(m => m.UserId == user.Id && m.GroupId == group.Id)
+            .ExecuteDeleteAsync();
+
+        return Results.Ok(new { removed = true });
     }
 
     // -----------------------------------------------------------------------------------
