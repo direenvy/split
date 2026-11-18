@@ -1,0 +1,24 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+
+# SQLite database files created at runtime
+*.db
+*.db-shm
+*.db-wal
+
+# Node / Vite
+node_modules/
+dist/
+.vite/
+*.local
+
+# The Vue build output is copied here by the build; it is not source.
+src/Split.Api/wwwroot/
+
+# OS
+Thumbs.db
+.DS_Store
