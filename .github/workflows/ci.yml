@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build and test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: src/Split.Client/package-lock.json
+
+      # ---------------------------------------------------------------------------------
+      # The domain and API, including the settlement algorithm's test suite.
+      # ---------------------------------------------------------------------------------
+
+      - name: Restore
+        run: dotnet restore Split.slnx
+
+      - name: Build
+        run: dotnet build Split.slnx --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test Split.slnx --configuration Release --no-build --verbosity normal
+
+      # ---------------------------------------------------------------------------------
+      # The Vue client. `npm ci` rather than `npm install`, so the lockfile is honoured
+      # exactly and a transitive update cannot quietly change what CI tested.
+      # ---------------------------------------------------------------------------------
+
+      - name: Install client dependencies
+        working-directory: src/Split.Client
+        run: npm ci
+
+      - name: Type-check and build the client
+        working-directory: src/Split.Client
+        run: npm run build
+
+      # The whole single-deployable idea rests on the build landing in wwwroot. If that ever
+      # stops being true the app still compiles and still passes its tests, and then serves a
+      # blank page in production - so it is worth one explicit check.
+      - name: Verify the client built into wwwroot
+        run: |
+          test -f src/Split.Api/wwwroot/index.html \
+            || { echo "::error::npm run build did not produce src/Split.Api/wwwroot/index.html"; exit 1; }
+          echo "wwwroot/index.html present"

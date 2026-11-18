@@ -46,13 +46,63 @@ cd src/Split.Client && npm run dev
 
 Vite proxies `/api` through to the backend, so the browser still sees a single origin.
 
+### Signing in with Google (optional)
+
+**The app runs perfectly well without this.** Sign-in only adds a list of the groups you have
+created or opened; every other feature works anonymously, and groups are reachable by their
+link either way. If no credentials are configured the whole feature switches itself off — the
+API reports `signInAvailable: false` and the client hides the button rather than offering one
+that cannot work. So you can clone this and run it, and nothing will be broken.
+
+To turn it on you need your own Google OAuth client. It takes a few minutes:
+
+1. Go to the [Google Cloud console](https://console.cloud.google.com/), create a project (or
+   pick an existing one).
+2. **APIs & Services → OAuth consent screen.** Choose **External**, give it a name and your
+   email. While it is in *Testing* you must add your own Google account under **Test users**,
+   or Google will refuse to sign you in.
+3. **APIs & Services → Credentials → Create credentials → OAuth client ID**, type
+   **Web application**.
+4. Under **Authorised redirect URIs** add exactly:
+
+   ```
+   http://localhost:5244/signin-google
+   ```
+
+   That path is fixed by `CallbackPath` in [`src/Split.Api/Auth.cs`](src/Split.Api/Auth.cs),
+   and the port is the one in `launchSettings.json`. The URI has to match character for
+   character — a trailing slash or the wrong port gives you `redirect_uri_mismatch`. If you
+   deploy, add the deployed origin's `/signin-google` as a second URI.
+5. Copy the client ID and client secret and store them with user-secrets, which keeps them
+   outside the project directory so they cannot be committed:
+
+```bash
+cd src/Split.Api && dotnet user-secrets set "Authentication:Google:ClientId" "YOUR_CLIENT_ID.apps.googleusercontent.com"
+```
+
+```bash
+cd src/Split.Api && dotnet user-secrets set "Authentication:Google:ClientSecret" "YOUR_CLIENT_SECRET"
+```
+
+Restart the API and the **Sign in** button appears. `GET /api/auth/me` returning
+`{"signInAvailable":true,...}` confirms the configuration was picked up.
+
+In production set the same two values as environment variables instead —
+`Authentication__Google__ClientId` and `Authentication__Google__ClientSecret` — and remember
+to add the deployed callback URL to the OAuth client.
+
+Nothing about sign-in is stored as a credential here: this app never sees a password, and the
+only thing kept about you is your Google account id, your email and your display name.
+
 ### Tests
 
 ```bash
 dotnet test
 ```
 
-71 tests, all against the domain layer.
+102 tests. 71 cover the domain — the settlement algorithm and the money arithmetic — and 31
+cover the API, running against real SQLite rather than an in-memory fake, because most of
+what can go wrong there is a thing SQLite specifically does or does not support.
 
 ---
 
@@ -165,10 +215,14 @@ Worth being straight about, since this is a portfolio project rather than a prod
   deployment should move to migrations before making further schema changes.
 - **Expenses split evenly** between the people you pick. No percentages, shares or itemised
   receipts.
-- **Nobody can be removed from a group**, because their past expenses would have to go
-  somewhere sensible and that question has no obviously right answer.
+- **People can be added to a group but not removed**, because their past expenses would have
+  to go somewhere sensible and that question has no obviously right answer.
+- **Deleting a group is permanent and creator-only.** A group is reachable by its link, so
+  merely opening one gives you a history row for it; if deletion checked for that row instead
+  of for having created the group, following a link somebody sent you would be enough to
+  destroy their data. Everyone else gets *Remove*, which only clears their own history.
 - **There is no "mark as paid"** — settling is advice, not a recorded transaction.
-- **Deleting an expense is not confirmed by a dialog**, just by tapping Remove twice.
+- **Destructive actions confirm by a second tap**, not a dialog.
 
 ---
 
@@ -202,10 +256,19 @@ lives in the domain; a layer whose job was to forward calls would be ceremony, n
 | `GET /api/groups/{slug}` | the group, its expenses, live balances and the settlement |
 | `POST /api/groups/{slug}/members` | add a person |
 | `POST /api/groups/{slug}/expenses` | log an expense |
-| `DELETE /api/groups/{slug}/expenses/{id}` | remove one |
+| `DELETE /api/groups/{slug}/expenses/{id}` | remove an expense |
+| `DELETE /api/groups/{slug}` | delete the group, creator only |
+| `DELETE /api/groups/{slug}/membership` | drop it from your own history |
+| `GET /api/groups/mine` | your groups; the only endpoint that needs an account |
+| `GET /api/auth/me` | who is signed in, and whether sign-in is even available here |
+| `GET /api/auth/sign-in` | start the Google redirect |
+| `POST /api/auth/sign-out` | end the session |
+| `POST /api/settlement-preview` | settle a set of balances without saving anything |
 
-Every endpoint returns the whole group. The client therefore never patches its own copy of
-the state to match the server, and what is on screen cannot drift from what was computed.
+The five endpoints that read or change a group all return the whole group. The client
+therefore never patches its own copy of the state to match the server, and what is on screen
+cannot drift from what was computed. The auth endpoints and the preview are the exceptions,
+because neither is about a particular group.
 
 Balances and the settlement are **derived on read**, never stored — they are a pure function
 of the expenses, and a stored copy would only be something to go stale.
@@ -220,14 +283,20 @@ agreed on.
 
 Vue 3 with `<script setup>` and TypeScript throughout. No Options API anywhere.
 
-Four routes:
+Six routes:
 
 | | |
 |---|---|
-| `/` | create a group, or open one by its code |
+| `/` | the landing page, with a live demo of the settlement algorithm |
+| `/new` | create a group, or open one by its code |
+| `/groups` | your history, if you are signed in |
 | `/g/:slug` | balances and the expense log |
 | `/g/:slug/add` | log an expense |
 | `/g/:slug/settle` | the settlement |
+
+No route is guarded. `/groups` is the only screen that needs an account and it handles being
+signed out by offering to sign in, which beats bouncing somebody to a login page they did not
+ask for. Access is decided on the server; a router guard is a convenience, never a control.
 
 Deep links work because the server falls back to `index.html` for any path it does not
 recognise — except under `/api`, which stays a JSON 404 so a mistyped call does not come back
