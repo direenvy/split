@@ -12,6 +12,10 @@ public class SplitDbContext(DbContextOptions<SplitDbContext> options) : DbContex
 
     public DbSet<ExpenseShare> ExpenseShares => Set<ExpenseShare>();
 
+    public DbSet<User> Users => Set<User>();
+
+    public DbSet<GroupMembership> GroupMemberships => Set<GroupMembership>();
+
     protected override void OnModelCreating(ModelBuilder model)
     {
         // Every entity here generates its own Version 7 GUID at construction, which keeps new
@@ -71,6 +75,31 @@ public class SplitDbContext(DbContextOptions<SplitDbContext> options) : DbContex
             share.Property(s => s.Id).ValueGeneratedNever();
             share.HasIndex(s => s.ExpenseId);
             share.Ignore(s => s.Amount);
+        });
+
+        model.Entity<User>(user =>
+        {
+            user.HasKey(u => u.Id);
+            user.Property(u => u.Id).ValueGeneratedNever();
+
+            // The Google subject is the identity, so it must be unique and is what every
+            // lookup goes through. Email is display data and is deliberately not unique.
+            user.HasIndex(u => u.GoogleSubject).IsUnique();
+            user.Property(u => u.GoogleSubject).HasMaxLength(255);
+            user.Property(u => u.Email).HasMaxLength(320);
+            user.Property(u => u.DisplayName).HasMaxLength(120);
+            user.Property(u => u.AvatarUrl).HasMaxLength(500);
+        });
+
+        model.Entity<GroupMembership>(membership =>
+        {
+            membership.HasKey(m => m.Id);
+            membership.Property(m => m.Id).ValueGeneratedNever();
+
+            // One row per user per group: the unique index is what makes "record that this
+            // person has seen this group" safe to call on every single read.
+            membership.HasIndex(m => new { m.UserId, m.GroupId }).IsUnique();
+            membership.HasIndex(m => m.UserId);
         });
     }
 }

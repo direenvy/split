@@ -9,6 +9,10 @@ WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 string connectionString = builder.Configuration.GetConnectionString("Split") ?? "Data Source=split.db";
 builder.Services.AddDbContext<SplitDbContext>(options => options.UseSqlite(connectionString));
 
+// Google sign-in, if this deployment has credentials for it. If not, the whole feature turns
+// itself off and the app runs anonymously — see src/Split.Api/Auth.cs.
+builder.AddSplitAuthentication();
+
 WebApplication app = builder.Build();
 
 // In development the framework's own exception page is the most useful thing to see. Anywhere
@@ -37,7 +41,16 @@ using (IServiceScope scope = app.Services.CreateScope())
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
+// Reads the session cookie and populates context.User. There is deliberately no
+// UseAuthorization() to go with it: no endpoint here is gated by a policy. The one endpoint
+// that needs an account, /api/groups/mine, checks for one itself and says so, which is
+// clearer than a policy for a single case — and adding the middleware without the matching
+// services throws at startup.
+app.UseAuthentication();
+
+app.MapAuthEndpoints();
 app.MapGroupEndpoints();
+app.MapPreviewEndpoints();
 
 // Anything under /api that no endpoint matched is a genuine 404 and must not fall through to
 // index.html — otherwise a mistyped API call returns an HTML page and the client reports a

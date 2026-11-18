@@ -20,6 +20,7 @@ public static class GroupEndpoints
     {
         RouteGroupBuilder api = app.MapGroup("/api/groups");
 
+        api.MapGet("/mine", GetMyGroups);
         api.MapPost("/", CreateGroup);
         api.MapGet("/{slug}", GetGroup);
         api.MapPost("/{slug}/members", AddMember);
@@ -29,7 +30,10 @@ public static class GroupEndpoints
 
     // -----------------------------------------------------------------------------------
 
-    private static async Task<IResult> CreateGroup(CreateGroupRequest request, SplitDbContext db)
+    private static async Task<IResult> CreateGroup(
+        CreateGroupRequest request,
+        SplitDbContext db,
+        HttpContext context)
     {
         string name = (request.Name ?? string.Empty).Trim();
         if (name.Length == 0)
@@ -65,13 +69,107 @@ public static class GroupEndpoints
         db.Groups.Add(group);
         await db.SaveChangesAsync();
 
+        await RememberVisit(context, db, group.Id, isCreator: true);
+
         return Results.Created($"/api/groups/{group.Slug}", ToView(group));
     }
 
-    private static async Task<IResult> GetGroup(string slug, SplitDbContext db)
+    private static async Task<IResult> GetGroup(string slug, SplitDbContext db, HttpContext context)
     {
         ExpenseGroup? group = await LoadGroup(db, slug);
-        return group is null ? NotFound(slug) : Results.Ok(ToView(group));
+        if (group is null)
+        {
+            return NotFound(slug);
+        }
+
+        // Opening a group puts it in your history, if you are signed in. Note the order:
+        // the group is loaded and returned regardless, because being signed in is not a
+        // condition of reading a group here — the link is.
+        await RememberVisit(context, db, group.Id, isCreator: false);
+
+        return Results.Ok(ToView(group));
+    }
+
+    /// <summary>
+    /// The signed-in user's groups, most recently opened first.
+    /// </summary>
+    private static async Task<IResult> GetMyGroups(SplitDbContext db, HttpContext context)
+    {
+        User? user = await context.GetCurrentUser(db);
+        if (user is null)
+        {
+            return Results.Unauthorized();
+        }
+
+        var rows = await db.GroupMemberships
+            .Where(m => m.UserId == user.Id)
+            .OrderByDescending(m => m.LastSeenAt)
+            .Join(
+                db.Groups,
+                membership => membership.GroupId,
+                group => group.Id,
+                (membership, group) => new
+                {
+                    group.Slug,
+                    group.Name,
+                    group.Currency,
+                    membership.IsCreator,
+                    membership.LastSeenAt,
+                    People = group.Participants.Count,
+                    TotalCents = group.Expenses.Sum(e => (long?)e.AmountCents) ?? 0L,
+                })
+            .ToListAsync();
+
+        return Results.Ok(rows.Select(r => new GroupSummaryView(
+            r.Slug,
+            r.Name,
+            r.Currency,
+            r.IsCreator,
+            r.LastSeenAt,
+            r.People,
+            Money.FromCents(r.TotalCents))));
+    }
+
+    /// <summary>
+    /// Notes that this user has seen this group, so it shows up in their history.
+    ///
+    /// Does nothing at all for an anonymous caller, which is the common case — the app is
+    /// fully usable without an account, and this is the only thing an account adds.
+    /// </summary>
+    private static async Task RememberVisit(
+        HttpContext context,
+        SplitDbContext db,
+        Guid groupId,
+        bool isCreator)
+    {
+        User? user = await context.GetCurrentUser(db);
+        if (user is null)
+        {
+            return;
+        }
+
+        GroupMembership? existing = await db.GroupMemberships
+            .FirstOrDefaultAsync(m => m.UserId == user.Id && m.GroupId == groupId);
+
+        if (existing is null)
+        {
+            db.GroupMemberships.Add(new GroupMembership
+            {
+                UserId = user.Id,
+                GroupId = groupId,
+                IsCreator = isCreator,
+            });
+        }
+        else
+        {
+            existing.LastSeenAt = DateTimeOffset.UtcNow;
+
+            // Creating a group you had merely opened before should still mark you creator;
+            // opening one you created must never clear the flag.
+            existing.IsCreator = existing.IsCreator || isCreator;
+        }
+
+        await db.SaveChangesAsync();
     }
 
     private static async Task<IResult> AddMember(string slug, AddMemberRequest request, SplitDbContext db)
