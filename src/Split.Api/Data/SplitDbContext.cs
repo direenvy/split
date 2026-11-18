@@ -29,6 +29,18 @@ public class SplitDbContext(DbContextOptions<SplitDbContext> options) : DbContex
         {
             group.HasKey(g => g.Id);
             group.Property(g => g.Id).ValueGeneratedNever();
+
+            // SQLite has no date type, and EF's SQLite provider cannot translate a comparison
+            // between two DateTimeOffsets at all — a Where(g => g.LastActivityAt < cutoff)
+            // throws rather than returning the wrong rows. The retention sweep is exactly that
+            // comparison, so this is stored as Unix seconds instead: an integer compares and
+            // sorts correctly in SQL, carries no timezone ambiguity, and follows the same rule
+            // the money columns do — keep an exact integer in the database and convert at the
+            // edge. Seconds are plenty; this drives a 90-day cutoff.
+            group.Property(g => g.LastActivityAt)
+                 .HasConversion(
+                     value => value.ToUnixTimeSeconds(),
+                     stored => DateTimeOffset.FromUnixTimeSeconds(stored));
             group.HasIndex(g => g.Slug).IsUnique();
             group.Property(g => g.Slug).HasMaxLength(64);
             group.Property(g => g.Name).HasMaxLength(120);

@@ -8,6 +8,7 @@ WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 // file is something you can delete to start over, which is the right weight for this app.
 string connectionString = builder.Configuration.GetConnectionString("Split") ?? "Data Source=split.db";
 builder.Services.AddDbContext<SplitDbContext>(options => options.UseSqlite(connectionString));
+builder.Services.AddHostedService<AnonymousGroupCleanupService>();
 
 // Google sign-in, if this deployment has credentials for it. If not, the whole feature turns
 // itself off and the app runs anonymously — see src/Split.Api/Auth.cs.
@@ -27,12 +28,11 @@ if (!app.Environment.IsDevelopment())
     }));
 }
 
-// Create the database on first run. A real deployment would use EF migrations; this app has
-// one schema and no upgrade path to worry about yet, so the extra tooling would not earn its
-// keep. The README says so out loud rather than leaving it to be discovered.
+// Create the database on first run and apply the small compatibility additions used by the
+// optional sign-in history and anonymous-group retention features.
 using (IServiceScope scope = app.Services.CreateScope())
 {
-    scope.ServiceProvider.GetRequiredService<SplitDbContext>().Database.EnsureCreated();
+    DatabaseSchemaSetup.Initialize(scope.ServiceProvider.GetRequiredService<SplitDbContext>());
 }
 
 // Note what is *missing* here: no CORS policy, no second origin, no proxy configuration. The

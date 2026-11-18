@@ -5,8 +5,8 @@ namespace Split.Api.Data;
 /// <summary>
 /// A set of people sharing expenses — a trip, a flat, a weekly dinner.
 ///
-/// Reachable by <see cref="Slug"/> alone: there are no accounts in this version, so the URL
-/// is the key. See the README for what that does and does not protect.
+/// Reachable by <see cref="Slug"/> alone. Sign-in adds a personal history but does not gate
+/// access; the URL remains the key. See the README for what that does and does not protect.
 /// </summary>
 public class ExpenseGroup
 {
@@ -21,6 +21,9 @@ public class ExpenseGroup
     public required string Currency { get; set; }
 
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+
+    /// <summary>Last time anybody opened or changed the group, used for anonymous retention.</summary>
+    public DateTimeOffset LastActivityAt { get; set; } = DateTimeOffset.UtcNow;
 
     public List<Participant> Participants { get; set; } = [];
 

@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <ItemGroup>
     <ProjectReference Include="..\Split.Domain\Split.Domain.csproj" />
@@ -13,6 +13,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>8dff82e7-2dc4-4ec7-89d6-65e92d2838d2</UserSecretsId>
   </PropertyGroup>
 
 </Project>

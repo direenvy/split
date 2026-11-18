@@ -69,7 +69,7 @@ public static class GroupEndpoints
         db.Groups.Add(group);
         await db.SaveChangesAsync();
 
-        await RememberVisit(context, db, group.Id, isCreator: true);
+        await RememberVisit(context, db, group, isCreator: true);
 
         return Results.Created($"/api/groups/{group.Slug}", ToView(group));
     }
@@ -85,7 +85,7 @@ public static class GroupEndpoints
         // Opening a group puts it in your history, if you are signed in. Note the order:
         // the group is loaded and returned regardless, because being signed in is not a
         // condition of reading a group here — the link is.
-        await RememberVisit(context, db, group.Id, isCreator: false);
+        await RememberVisit(context, db, group, isCreator: false);
 
         return Results.Ok(ToView(group));
     }
@@ -139,34 +139,33 @@ public static class GroupEndpoints
     private static async Task RememberVisit(
         HttpContext context,
         SplitDbContext db,
-        Guid groupId,
+        ExpenseGroup group,
         bool isCreator)
     {
+        group.LastActivityAt = DateTimeOffset.UtcNow;
         User? user = await context.GetCurrentUser(db);
-        if (user is null)
+        if (user is not null)
         {
-            return;
-        }
+            GroupMembership? existing = await db.GroupMemberships
+                .FirstOrDefaultAsync(m => m.UserId == user.Id && m.GroupId == group.Id);
 
-        GroupMembership? existing = await db.GroupMemberships
-            .FirstOrDefaultAsync(m => m.UserId == user.Id && m.GroupId == groupId);
-
-        if (existing is null)
-        {
-            db.GroupMemberships.Add(new GroupMembership
+            if (existing is null)
             {
-                UserId = user.Id,
-                GroupId = groupId,
-                IsCreator = isCreator,
-            });
-        }
-        else
-        {
-            existing.LastSeenAt = DateTimeOffset.UtcNow;
+                db.GroupMemberships.Add(new GroupMembership
+                {
+                    UserId = user.Id,
+                    GroupId = group.Id,
+                    IsCreator = isCreator,
+                });
+            }
+            else
+            {
+                existing.LastSeenAt = DateTimeOffset.UtcNow;
 
-            // Creating a group you had merely opened before should still mark you creator;
-            // opening one you created must never clear the flag.
-            existing.IsCreator = existing.IsCreator || isCreator;
+                // Creating a group you had merely opened before should still mark you creator;
+                // opening one you created must never clear the flag.
+                existing.IsCreator = existing.IsCreator || isCreator;
+            }
         }
 
         await db.SaveChangesAsync();
@@ -199,6 +198,7 @@ public static class GroupEndpoints
         };
 
         group.Participants.Add(participant);
+        group.LastActivityAt = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync();
 
         return Results.Ok(ToView(group));
@@ -283,6 +283,7 @@ public static class GroupEndpoints
         };
 
         group.Expenses.Add(expense);
+        group.LastActivityAt = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync();
 
         return Results.Ok(ToView(group));
@@ -304,6 +305,7 @@ public static class GroupEndpoints
 
         db.Expenses.Remove(expense);
         group.Expenses.Remove(expense);
+        group.LastActivityAt = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync();
 
         return Results.Ok(ToView(group));

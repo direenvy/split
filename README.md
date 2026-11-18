@@ -155,15 +155,14 @@ group size from 1 to 12, asserting the shares always sum back to the original.
 
 Worth being straight about, since this is a portfolio project rather than a product.
 
-- **There is no authentication.** A group is reachable by anybody who has its URL. The slug
-  (`bright-tapir-4821`) is readable rather than secret — roughly 13 million combinations,
-  which is enough that nobody will stumble onto your group, and nowhere near enough to call
-  it security. Do not put anything sensitive in one. Adding accounts would mean a users
-  table, a sign-in flow, and an ownership check on every endpoint; that is a bigger project
-  than this one, and pretending otherwise would be worse than saying so here.
-- **The database is created with `EnsureCreated()`**, not EF migrations. There is one schema
-  and no upgrade path yet, so the migrations tooling would not earn its keep. A real
-  deployment would want migrations before the first schema change.
+- **Google sign-in is optional.** Signed-in users get a history of groups they create or open;
+  sign-in does not restrict access. A group is reachable by anybody who has its URL. The slug
+  is readable rather than secret, so do not put sensitive information in a group.
+- **Anonymous groups expire after 90 days without activity.** Opening a group or changing its
+  members or expenses resets the timer. Groups saved in a signed-in user's history are kept.
+- **The database starts with `EnsureCreated()`**, with a small idempotent startup update for
+  the sign-in and retention fields. This project still does not use EF migrations; a larger
+  deployment should move to migrations before making further schema changes.
 - **Expenses split evenly** between the people you pick. No percentages, shares or itemised
   receipts.
 - **Nobody can be removed from a group**, because their past expenses would have to go
