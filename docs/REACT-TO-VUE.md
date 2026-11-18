@@ -19,7 +19,7 @@ The single most important thing, first:
 | `useState` | `ref` | [`stores/group.ts`](../src/Split.Client/src/stores/group.ts) |
 | `useMemo` | `computed` | [`views/HomeView.vue`](../src/Split.Client/src/views/HomeView.vue) |
 | `useEffect` | `watch` / `watchEffect` | [`composables/useGroupRoute.ts`](../src/Split.Client/src/composables/useGroupRoute.ts) |
-| `useRef` (DOM) | `ref` + `ref="name"` attribute | not used here |
+| `useRef` (DOM) | `useTemplateRef` + `ref="name"` | [`views/GroupView.vue`](../src/Split.Client/src/views/GroupView.vue) |
 | Custom hook | Composable | [`composables/useMoney.ts`](../src/Split.Client/src/composables/useMoney.ts) |
 | Redux / Zustand | Pinia | [`stores/group.ts`](../src/Split.Client/src/stores/group.ts) |
 | React Router | Vue Router | [`router.ts`](../src/Split.Client/src/router.ts) |
@@ -148,6 +148,45 @@ export function useMoney(currency: MaybeRefOrGetter<string | undefined>) {
 [`MoneyAmount.vue`](../src/Split.Client/src/components/MoneyAmount.vue) it is called as
 `useMoney(() => props.currency)` — a getter, so the formatter tracks prop changes. Passing
 `props.currency` directly would read it once and freeze.
+
+---
+
+## 4a. Reaching a DOM node, and waiting for the DOM
+
+The "add someone" field in [`GroupView.vue`](../src/Split.Client/src/views/GroupView.vue)
+opens and focuses itself. Both halves differ from React.
+
+```ts
+// React
+const input = useRef<HTMLInputElement>(null)
+// <input ref={input} />
+input.current?.focus()
+```
+
+```ts
+// Vue
+const newPersonInput = useTemplateRef<HTMLInputElement>('new-person')
+// <input ref="new-person" />
+newPersonInput.value?.focus()
+```
+
+`useTemplateRef` (Vue 3.5+) takes the **string** you put in the `ref` attribute. Before 3.5
+you declared a plain `ref(null)` whose *variable name* had to match the attribute, so renaming
+one and not the other silently gave you `null`.
+
+The second half is the part with no clean React equivalent:
+
+```ts
+addingPerson.value = true
+await nextTick()          // the <input> does not exist yet — v-if has not re-rendered
+newPersonInput.value?.focus()
+```
+
+Vue batches DOM updates. Changing state does not touch the DOM immediately, so the element
+you just revealed with `v-if` is not there on the next line. `nextTick()` is a promise that
+resolves once the DOM has caught up. In React you would reach for `useLayoutEffect`, or an
+effect keyed on the flag — both of which mean putting the focus call somewhere other than the
+function that caused it. Here it stays on the line after.
 
 ---
 

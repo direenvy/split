@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref, useTemplateRef } from 'vue'
 import AppButton from '@/components/AppButton.vue'
 import MoneyAmount from '@/components/MoneyAmount.vue'
 import StateNote from '@/components/StateNote.vue'
@@ -20,6 +20,53 @@ const { format } = useMoney(() => store.group?.currency)
 
 const copied = ref(false)
 const confirmingDelete = ref<string | null>(null)
+
+// --- adding somebody to the group ---------------------------------------------------------
+
+const addingPerson = ref(false)
+const newPersonName = ref('')
+
+/*
+  A template ref: the Vue equivalent of React's useRef on a DOM node.
+
+  In React you write `const input = useRef(null)` and `<input ref={input} />`, then reach for
+  `input.current`. Here `useTemplateRef('new-person')` pairs with `ref="new-person"` in the
+  template, and the node arrives as `.value`. Vue 3.5 added this named form; before it, you
+  declared a plain `ref(null)` whose variable name had to match the attribute, which was easy
+  to break by renaming one and not the other.
+*/
+const newPersonInput = useTemplateRef<HTMLInputElement>('new-person')
+
+async function startAddingPerson() {
+  store.clearError()
+  addingPerson.value = true
+
+  // The input does not exist yet: v-if has not re-rendered. `nextTick` waits for the DOM to
+  // catch up with the state change, which is the job React does with a layout effect.
+  await nextTick()
+  newPersonInput.value?.focus()
+}
+
+function cancelAddingPerson() {
+  addingPerson.value = false
+  newPersonName.value = ''
+  store.clearError()
+}
+
+async function confirmAddPerson() {
+  const name = newPersonName.value.trim()
+  if (name.length === 0) return
+
+  // The server is the one that decides whether this name is already taken — it owns the
+  // roster, and checking here as well would be a second rule to keep in step. A rejection
+  // comes back through store.error and is shown under the field.
+  const added = await store.addMember(name)
+
+  if (added) {
+    newPersonName.value = ''
+    addingPerson.value = false
+  }
+}
 
 const shareUrl = computed(() =>
   store.group ? `${window.location.origin}/g/${store.group.slug}` : '',
@@ -91,7 +138,8 @@ async function removeExpense(id: string) {
         </AppButton>
       </header>
 
-      <StateNote v-if="store.error" tone="error">{{ store.error }}</StateNote>
+      <!-- Errors from anything other than the add-person field, which shows its own below. -->
+      <StateNote v-if="store.error && !addingPerson" tone="error">{{ store.error }}</StateNote>
 
       <!-- Balances ------------------------------------------------------------------- -->
       <section class="panel">
@@ -117,6 +165,46 @@ async function removeExpense(id: string) {
             </span>
           </li>
         </ul>
+
+        <!--
+          Adding someone is a secondary action: this view already spends its one filled
+          violet button on "Add expense", and a design system with a single primary colour
+          only works if that stays true.
+        -->
+        <div class="addperson">
+          <AppButton v-if="!addingPerson" variant="ghost" @click="startAddingPerson">
+            + Add someone
+          </AppButton>
+
+          <form v-else @submit.prevent="confirmAddPerson">
+            <div class="addperson__form">
+              <input
+                ref="new-person"
+                v-model="newPersonName"
+                class="addperson__input"
+                type="text"
+                maxlength="80"
+                placeholder="Their name"
+                aria-label="Name of the person to add"
+                :aria-invalid="store.error ? 'true' : undefined"
+                :disabled="store.loading"
+                @keyup.esc="cancelAddingPerson"
+              />
+
+              <AppButton variant="secondary" type="submit" :busy="store.loading">Add</AppButton>
+              <AppButton variant="ghost" :disabled="store.loading" @click="cancelAddingPerson">
+                Cancel
+              </AppButton>
+            </div>
+
+            <!--
+              Shown here rather than in the page-level error slot above. "Aisyah is already in
+              this group" is about the field the user is looking at, and a message two hundred
+              pixels up the page reads like it is about something else.
+            -->
+            <p v-if="store.error" class="addperson__error" role="alert">{{ store.error }}</p>
+          </form>
+        </div>
       </section>
 
       <div class="actions">
@@ -234,6 +322,47 @@ async function removeExpense(id: string) {
 
 .balances__verb {
   font-size: var(--text-xs);
+}
+
+.addperson {
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--hairline);
+}
+
+.addperson__form {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.addperson__input {
+  flex: 1;
+  min-width: 0;
+  font-family: inherit;
+  font-size: var(--text-base);
+  color: var(--bone-white);
+
+  background: var(--surface-raised-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  min-height: 44px;
+}
+
+.addperson__error {
+  font-size: var(--text-xs);
+  color: var(--saffron-spark);
+  margin-top: var(--space-1);
+}
+
+.addperson__input::placeholder {
+  color: var(--ash-gray);
+}
+
+.addperson__input:focus {
+  outline: none;
+  border-color: var(--electric-iris);
 }
 
 .actions {
