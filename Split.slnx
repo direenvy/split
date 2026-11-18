@@ -4,6 +4,7 @@
     <Project Path="src/Split.Domain/Split.Domain.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Split.Api.Tests/Split.Api.Tests.csproj" />
     <Project Path="tests/Split.Domain.Tests/Split.Domain.Tests.csproj" />
   </Folder>
 </Solution>

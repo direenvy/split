@@ -101,9 +101,20 @@ public static class GroupEndpoints
             return Results.Unauthorized();
         }
 
+        return Results.Ok(await LoadHistory(db, user.Id));
+    }
+
+    /// <summary>
+    /// A user's groups, most recently opened first.
+    ///
+    /// Public so the tests can exercise the real query rather than a copy of it — this is the
+    /// query that used to throw, and a test against a reimplementation would have kept passing
+    /// while the endpoint kept failing.
+    /// </summary>
+    public static async Task<List<GroupSummaryView>> LoadHistory(SplitDbContext db, Guid userId)
+    {
         var rows = await db.GroupMemberships
-            .Where(m => m.UserId == user.Id)
-            .OrderByDescending(m => m.LastSeenAt)
+            .Where(m => m.UserId == userId)
             .Join(
                 db.Groups,
                 membership => membership.GroupId,
@@ -120,14 +131,24 @@ public static class GroupEndpoints
                 })
             .ToListAsync();
 
-        return Results.Ok(rows.Select(r => new GroupSummaryView(
-            r.Slug,
-            r.Name,
-            r.Currency,
-            r.IsCreator,
-            r.LastSeenAt,
-            r.People,
-            Money.FromCents(r.TotalCents))));
+        // Sorted here rather than in SQL, and that is not a stylistic choice: SQLite cannot
+        // ORDER BY a DateTimeOffset, so putting this in the query made /api/groups/mine throw
+        // for every signed-in user. Doing it in memory is safe because the result set is one
+        // person's own groups — tens of rows, not a table scan.
+        return
+        [
+            .. rows
+                .OrderByDescending(r => r.LastSeenAt)
+                .ThenBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
+                .Select(r => new GroupSummaryView(
+                    r.Slug,
+                    r.Name,
+                    r.Currency,
+                    r.IsCreator,
+                    r.LastSeenAt,
+                    r.People,
+                    Money.FromCents(r.TotalCents)))
+        ];
     }
 
     /// <summary>
