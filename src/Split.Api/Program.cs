@@ -4,6 +4,16 @@ using Split.Api.Data;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
+// Hosts like Render, Fly and Cloud Run pick the port and hand it over in PORT, then health
+// check whatever they chose. Without this the app would listen on its own default, the
+// platform would get nothing back, and the deploy would be marked failed with the logs
+// cheerfully reporting that the application started.
+string? assignedPort = Environment.GetEnvironmentVariable("PORT");
+if (!string.IsNullOrWhiteSpace(assignedPort))
+{
+    builder.WebHost.UseUrls($"http://0.0.0.0:{assignedPort}");
+}
+
 // One SQLite file next to the executable. Nothing here needs a database server, and a single
 // file is something you can delete to start over, which is the right weight for this app.
 string connectionString = builder.Configuration.GetConnectionString("Split") ?? "Data Source=split.db";

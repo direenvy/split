@@ -94,6 +94,38 @@ to add the deployed callback URL to the OAuth client.
 Nothing about sign-in is stored as a credential here: this app never sees a password, and the
 only thing kept about you is your Google account id, your email and your display name.
 
+### Deploying
+
+The whole app is one container: [`Dockerfile`](Dockerfile) builds the Vue bundle, drops it
+into `wwwroot`, and publishes the API around it. What comes out is a single process serving
+the client and the API from one origin, so the URL the host gives you **is** the application —
+there is no separate front end to deploy and nothing to point at a backend.
+
+```bash
+docker build -t split .
+docker run -p 8080:8080 -v split-data:/data split
+```
+
+On [Render](https://render.com), [`render.yaml`](render.yaml) describes it: *New → Blueprint*,
+point it at this repository. Two things in there matter more than they look:
+
+- **The persistent disk.** Render gives each deploy a fresh filesystem, so without a disk
+  mounted at `/data` the SQLite file would be wiped on every restart — the app would keep
+  working and simply be empty, which is worse than failing.
+- **`sync: false` on the Google keys.** Render prompts for those in the dashboard instead of
+  reading them from the file, so the client secret never enters the repository. Leave them
+  blank and the app still runs; sign-in just turns itself off.
+
+Afterwards, add the deployed callback to your Google OAuth client, alongside the localhost
+one:
+
+```
+https://YOUR-SERVICE.onrender.com/signin-google
+```
+
+The free tier sleeps when idle, so the first request after a quiet spell takes 30–60 seconds
+to wake. After that it is immediate.
+
 ### Tests
 
 ```bash

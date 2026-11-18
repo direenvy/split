@@ -1,0 +1,41 @@
+# Render blueprint. In the dashboard: New → Blueprint, point it at this repository.
+#
+# One service, which is the entire argument of this project: the image contains the Vue
+# bundle and the API, so the URL Render hands back is the whole application rather than a
+# backend that needs a front end hosted somewhere else.
+
+services:
+  - type: web
+    name: split
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+
+    # Render restarts and redeploys onto a fresh filesystem, so the SQLite file has to live
+    # on a disk that outlives the container. Without this every deploy would silently wipe
+    # every group — the app would look fine and simply be empty.
+    disk:
+      name: split-data
+      mountPath: /data
+      sizeGB: 1
+
+    healthCheckPath: /api/auth/me
+
+    envVars:
+      - key: ASPNETCORE_ENVIRONMENT
+        value: Production
+
+      # Must point inside the mounted disk above.
+      - key: ConnectionStrings__Split
+        value: Data Source=/data/split.db
+
+      # Google sign-in. Left unset here on purpose: sync false means Render asks for the
+      # value in the dashboard instead of reading it from this file, so the secret never
+      # goes anywhere near the repository. Leave them blank and the app still runs — sign-in
+      # switches itself off and everything else works anonymously.
+      - key: Authentication__Google__ClientId
+        sync: false
+      - key: Authentication__Google__ClientSecret
+        sync: false
