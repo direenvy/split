@@ -1,0 +1,111 @@
+/*
+  The Dala design system, as applied to a data-dense app.
+
+  The token set this comes from was extracted from a marketing site: 113px display type, one
+  or two elements per viewport, and an explicit "no cards, no borders" rule. A bill splitter is
+  the opposite kind of screen — rows of numbers people scan and compare — so the tokens are
+  kept and the layout rules are adapted. What that means in practice is written down next to
+  each decision below, and summarised in the README.
+*/
+
+:root {
+  /* ---------------------------------------------------------------------------------------
+     Colour — taken verbatim from the token set.
+     --------------------------------------------------------------------------------------- */
+
+  --void: #000000;          /* the page canvas; pure black, not dark grey */
+  --bone-white: #ffffff;    /* headings, body text, icons */
+  --ash-gray: #9a9a9a;      /* muted labels, secondary text */
+  --silver-mist: #bdbdbd;   /* captions, the quietest readable grey */
+  --electric-iris: #8052ff; /* the one primary action on a screen, and the brand mark */
+  --saffron-spark: #ffb829; /* emphasis only — never a background, never a whole button */
+  --deep-verdant: #15846e;  /* secondary accent; the deep end of the brand gradient */
+
+  /*
+    The extracted token file had this colour twice: once as #15846e and once, as a surface, as
+    #15846 — five hex digits, which no browser accepts, so that rule would simply have been
+    dropped. Corrected to the six-digit value here.
+  */
+  --deep-verdant-tint: #15846e;
+
+  /* ---------------------------------------------------------------------------------------
+     Surfaces — the one real addition.
+
+     The source system says no cards and no borders: elements float in a black void. That works
+     when a viewport holds one headline. It fails for a list of fifteen expenses, where the eye
+     needs to know where one row ends and the next begins. So rather than drawing borders, this
+     lifts surfaces a few points off black. The void is still the dominant surface and nothing
+     here reads as a grey UI; the separation is just enough to be scannable.
+     --------------------------------------------------------------------------------------- */
+
+  --surface-raised: #0a0a0a;   /* panels sitting on the void */
+  --surface-raised-2: #111111; /* rows and inputs sitting on a panel */
+  --surface-hover: #161616;
+  --hairline: rgba(255, 255, 255, 0.07); /* a separator, not a border */
+
+  /* Semantic colours for balances. Owed money is the thing to act on, so it gets the warm
+     accent; being owed is settled-adjacent, so it gets the calm one. */
+  --positive: #3ec9a7; /* lifted from --deep-verdant so it stays legible on black */
+  --negative: var(--saffron-spark);
+
+  /* ---------------------------------------------------------------------------------------
+     Typography
+
+     PPNeueMontreal is a commercial typeface from Pangram Pangram and cannot be redistributed
+     in a public repository, so it is not used here. The token file names Inter as the
+     substitute; this uses Inter Variable, self-hosted via @fontsource-variable/inter, because
+     the design leans on weight 200 and only the variable cut actually has it.
+     --------------------------------------------------------------------------------------- */
+
+  --font-sans: 'Inter Variable', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI',
+    Roboto, Helvetica, Arial, sans-serif;
+
+  /* The scale, trimmed at the top. The source tops out at 113px, which is a hero headline on a
+     landing page; the largest thing here is a balance figure, so the display step lands at
+     48px and keeps the -0.04em tracking that gives the big type its character. */
+  --text-display: 48px;
+  --text-h1: 36px;
+  --text-h2: 27px;
+  --text-h3: 24px;
+  --text-body: 18px;  /* weight 200 — the signature of this system */
+  --text-base: 15px;
+  --text-sm: 14px;
+  --text-xs: 12px;
+
+  --tracking-display: -0.04em;
+  --tracking-label: 0.05em;
+  --tracking-nav: 0.025em;
+
+  --weight-thin: 200;   /* prose only: see the note in base.css */
+  --weight-regular: 400;
+  --weight-semibold: 600;
+
+  /* ---------------------------------------------------------------------------------------
+     Spacing — 6px base, verbatim from the token set.
+     --------------------------------------------------------------------------------------- */
+
+  --space-1: 6px;
+  --space-2: 12px;
+  --space-3: 18px;
+  --space-4: 24px;
+  --space-5: 30px;
+  --space-6: 36px;
+  --space-10: 60px;
+  --space-16: 96px;
+  --space-20: 120px;
+
+  /* ---------------------------------------------------------------------------------------
+     Radii
+
+     24px is right for a panel and absurd on a 44px-tall row, where it would eat the corners
+     entirely. The large radius is kept for containers and buttons; dense elements get a
+     proportionate step down.
+     --------------------------------------------------------------------------------------- */
+
+  --radius-lg: 24px;
+  --radius-md: 14px;
+  --radius-sm: 10px;
+  --radius-full: 9999px;
+
+  --page-max: 720px;
+}
