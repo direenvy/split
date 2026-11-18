@@ -1,22 +1,31 @@
 <script setup lang="ts">
-import { RouterLink, RouterView } from 'vue-router'
+import { onMounted } from 'vue'
+import { RouterView } from 'vue-router'
+import NavBar from '@/components/NavBar.vue'
+import { useAuthStore } from '@/stores/auth'
+
+/*
+  The shell: a nav bar and whatever route is current.
+
+  `onMounted` is the one lifecycle hook this app uses, and it is the closest thing to
+  `useEffect(() => {...}, [])`. It runs once, after the component is in the DOM. Finding out
+  who is signed in belongs here rather than in main.ts, because it should not delay the first
+  paint — the page renders signed-out and the nav fills in when the answer arrives.
+*/
+
+const auth = useAuthStore()
+
+onMounted(() => {
+  void auth.check()
+})
 </script>
 
 <template>
   <div class="shell">
-    <header class="shell__bar">
-      <RouterLink :to="{ name: 'home' }" class="brand">
-        <span class="brand__mark" aria-hidden="true"></span>
-        <span class="brand__word">Split</span>
-      </RouterLink>
-    </header>
+    <NavBar />
 
     <main>
-      <!--
-        <RouterView> is where the matched route's component renders — React Router's
-        <Outlet>. The v-slot form gives access to the component so it can be wrapped; the
-        plain form is enough here.
-      -->
+      <!-- React Router's <Outlet>. -->
       <RouterView />
     </main>
   </div>
@@ -26,34 +35,5 @@ import { RouterLink, RouterView } from 'vue-router'
 .shell {
   min-height: 100vh;
   background: var(--void);
-}
-
-.shell__bar {
-  max-width: var(--page-max);
-  margin: 0 auto;
-  padding: var(--space-4);
-}
-
-.brand {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-/* The logo mark: the brand gradient, violet into the deep verdant that the token file had
-   mis-specified as a five-digit hex value. */
-.brand__mark {
-  width: 22px;
-  height: 22px;
-  border-radius: var(--radius-full);
-  background: linear-gradient(135deg, var(--electric-iris), var(--deep-verdant-tint));
-}
-
-.brand__word {
-  font-size: var(--text-sm);
-  font-weight: var(--weight-semibold);
-  letter-spacing: var(--tracking-nav);
-  text-transform: uppercase;
-  color: var(--bone-white);
 }
 </style>

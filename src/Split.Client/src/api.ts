@@ -1,4 +1,12 @@
-import type { AddExpenseRequest, CreateGroupRequest, Group } from './types'
+import type {
+  AddExpenseRequest,
+  CreateGroupRequest,
+  Group,
+  GroupSummary,
+  MeResponse,
+  PreviewBalance,
+  SettlementPreview,
+} from './types'
 
 /*
   The only place in the client that talks to the network.
@@ -85,5 +93,33 @@ export const api = {
       `/api/groups/${encodeURIComponent(slug)}/expenses/${encodeURIComponent(expenseId)}`,
       { method: 'DELETE' },
     )
+  },
+
+  // --- accounts -------------------------------------------------------------------------
+
+  me(): Promise<MeResponse> {
+    return request<MeResponse>('/api/auth/me')
+  },
+
+  signOut(): Promise<{ signedOut: boolean }> {
+    return request<{ signedOut: boolean }>('/api/auth/sign-out', { method: 'POST' })
+  },
+
+  myGroups(): Promise<GroupSummary[]> {
+    return request<GroupSummary[]>('/api/groups/mine')
+  },
+
+  // --- the landing page demo ------------------------------------------------------------
+
+  /**
+   * Settles a set of balances without saving anything. This runs the same C# algorithm the
+   * real app uses, which is the entire reason the demo calls the server instead of working
+   * the answer out in the browser.
+   */
+  settlementPreview(balances: PreviewBalance[]): Promise<SettlementPreview> {
+    return request<SettlementPreview>('/api/settlement-preview', {
+      method: 'POST',
+      body: JSON.stringify({ balances }),
+    })
   },
 }

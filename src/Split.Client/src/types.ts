@@ -46,6 +46,46 @@ export interface Group {
   settlement: Payment[]
 }
 
+export interface CurrentUser {
+  id: string
+  displayName: string
+  email: string
+  avatarUrl: string | null
+}
+
+export interface MeResponse {
+  signInAvailable: boolean
+  user: CurrentUser | null
+}
+
+/** One row in the signed-in user's history. */
+export interface GroupSummary {
+  slug: string
+  name: string
+  currency: string
+  isCreator: boolean
+  lastSeenAt: string
+  people: number
+  totalSpend: number
+}
+
+export interface PreviewBalance {
+  name: string
+  net: number
+}
+
+export interface PreviewPayment {
+  from: string
+  to: string
+  amount: number
+}
+
+export interface SettlementPreview {
+  payments: PreviewPayment[]
+  /** What settling the obvious way would have cost: every debtor paying every creditor. */
+  naivePaymentCount: number
+}
+
 export interface CreateGroupRequest {
   name: string
   currency: string

@@ -84,10 +84,10 @@ function openByCode() {
 <template>
   <div class="page">
     <section class="hero">
-      <h1>Split the bill,<br />settle in the fewest payments.</h1>
+      <h1>New group</h1>
       <p class="prose hero__sub">
-        Log what everyone paid. Split sorts out who owes whom, and works out the shortest list
-        of payments that clears the group.
+        Name it, add everyone who is splitting, and you will get a link to share. No account
+        needed.
       </p>
     </section>
 
@@ -97,8 +97,6 @@ function openByCode() {
       plumbing.
     -->
     <form class="panel stack" novalidate @submit.prevent="createGroup">
-      <h2>New group</h2>
-
       <TextField v-model="name" label="What is it for" placeholder="Langkawi trip" :maxlength="120" />
 
       <TextField
@@ -149,7 +147,7 @@ function openByCode() {
       </AppButton>
     </form>
 
-    <form class="join" @submit.prevent="openByCode">
+    <form id="join" class="join" @submit.prevent="openByCode">
       <TextField
         v-model="joinCode"
         label="Already have a group"

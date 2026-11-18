@@ -63,6 +63,14 @@
   /* The scale, trimmed at the top. The source tops out at 113px, which is a hero headline on a
      landing page; the largest thing here is a balance figure, so the display step lands at
      48px and keeps the -0.04em tracking that gives the big type its character. */
+  /*
+    The landing page, and only the landing page, gets the source system's real display step.
+    113px was dropped everywhere else because a data screen cannot carry it — but a hero is
+    exactly what that size was drawn for, so here the original scale applies, fluid down to
+    something that fits a phone.
+  */
+  --text-hero: clamp(44px, 10.5vw, 113px);
+
   --text-display: 48px;
   --text-h1: 36px;
   --text-h2: 27px;

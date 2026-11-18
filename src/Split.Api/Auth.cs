@@ -31,15 +31,18 @@ public static class Auth
     /// <summary>Claim holding our own user id, so requests need no lookup by Google subject.</summary>
     public const string UserIdClaim = "split:uid";
 
-    /// <summary>Set when a client id and secret are present; false otherwise.</summary>
-    public static bool IsConfigured { get; private set; }
-
     public static void AddSplitAuthentication(this WebApplicationBuilder builder)
     {
         string? clientId = builder.Configuration["Authentication:Google:ClientId"];
         string? clientSecret = builder.Configuration["Authentication:Google:ClientSecret"];
 
-        IsConfigured = !string.IsNullOrWhiteSpace(clientId) && !string.IsNullOrWhiteSpace(clientSecret);
+        bool configured = !string.IsNullOrWhiteSpace(clientId) && !string.IsNullOrWhiteSpace(clientSecret);
+
+        // Whether sign-in is available is a fact about this host, so it lives in the container
+        // rather than in a static field. A static would be shared across every application
+        // instance in a process, which is exactly what an integration test spins up several
+        // of — one test configuring Google would silently change another test's answer.
+        builder.Services.AddSingleton(new GoogleSignIn(configured));
 
         AuthenticationBuilder authentication = builder.Services.AddAuthentication(options =>
         {
@@ -48,7 +51,7 @@ public static class Auth
             // Only point "challenge" at Google when Google can actually answer. Without this
             // guard an unconfigured app would throw on the first protected request instead of
             // simply reporting that nobody is signed in.
-            if (IsConfigured)
+            if (configured)
             {
                 options.DefaultChallengeScheme = GoogleDefaults.AuthenticationScheme;
             }
@@ -87,7 +90,7 @@ public static class Auth
             };
         });
 
-        if (!IsConfigured)
+        if (!configured)
         {
             return;
         }
@@ -197,3 +200,9 @@ public static class Auth
         && !returnUrl.StartsWith("//", StringComparison.Ordinal)
         && !returnUrl.StartsWith("/\\", StringComparison.Ordinal);
 }
+
+/// <summary>
+/// Whether this host has Google credentials, and can therefore sign anyone in. Injected
+/// rather than read from a static, so each application instance answers for itself.
+/// </summary>
+public sealed record GoogleSignIn(bool IsConfigured);

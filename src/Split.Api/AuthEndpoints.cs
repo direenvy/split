@@ -26,13 +26,13 @@ public static class AuthEndpoints
     /// sign-in button entirely when nobody has configured Google credentials, rather than
     /// offering a button that would fail.
     /// </summary>
-    private static async Task<IResult> WhoAmI(HttpContext context, SplitDbContext db)
+    private static async Task<IResult> WhoAmI(HttpContext context, SplitDbContext db, GoogleSignIn google)
     {
         User? user = await context.GetCurrentUser(db);
 
         return Results.Ok(new
         {
-            signInAvailable = Auth.IsConfigured,
+            signInAvailable = google.IsConfigured,
             user = user is null
                 ? null
                 : new { user.Id, user.DisplayName, user.Email, user.AvatarUrl },
@@ -44,9 +44,9 @@ public static class AuthEndpoints
     /// the user has to actually land on Google's page — so the client sets window.location
     /// here rather than calling fetch.
     /// </summary>
-    private static IResult SignIn(string? returnUrl)
+    private static IResult SignIn(string? returnUrl, GoogleSignIn google)
     {
-        if (!Auth.IsConfigured)
+        if (!google.IsConfigured)
         {
             return Results.BadRequest(new
             {
