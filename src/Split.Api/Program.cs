@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Split.Api;
 using Split.Api.Data;
@@ -24,7 +25,31 @@ builder.Services.AddHostedService<AnonymousGroupCleanupService>();
 // itself off and the app runs anonymously — see src/Split.Api/Auth.cs.
 builder.AddSplitAuthentication();
 
+// Behind a reverse proxy — Render, Fly, any container platform — TLS is terminated at the
+// edge and the request reaches this process over plain HTTP. Without reading the forwarded
+// headers, the app believes it is running on http://, and two things break quietly:
+//
+//   * the Google sign-in challenge builds an http:// redirect_uri, which Google refuses
+//     outright for anything that is not localhost, so sign-in fails with a mismatch error
+//     that looks like a configuration problem and is not;
+//   * the session cookie's SameAsRequest policy sees a non-secure request and leaves the
+//     Secure flag off.
+//
+// KnownProxies and KnownNetworks are cleared because the proxy's address is assigned by the
+// platform and not knowable here. That means trusting X-Forwarded-Proto from whatever
+// connects — acceptable precisely because on these platforms nothing reaches the container
+// except through their proxy, and it is the pattern they document.
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedProto | ForwardedHeaders.XForwardedFor;
+    options.KnownNetworks.Clear();
+    options.KnownProxies.Clear();
+});
+
 WebApplication app = builder.Build();
+
+// First in the pipeline, before anything reads the scheme or generates a URL from it.
+app.UseForwardedHeaders();
 
 // In development the framework's own exception page is the most useful thing to see. Anywhere
 // else, an unhandled exception should come back as JSON like every other response, rather than
