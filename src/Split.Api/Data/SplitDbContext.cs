@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace Split.Api.Data;
 
@@ -16,6 +17,40 @@ public class SplitDbContext(DbContextOptions<SplitDbContext> options) : DbContex
 
     public DbSet<GroupMembership> GroupMemberships => Set<GroupMembership>();
 
+    /// <summary>
+    /// Every <see cref="DateTimeOffset"/> in the model is stored as Unix seconds.
+    ///
+    /// <para>
+    /// This is a convention rather than a property-by-property choice because the bug it
+    /// prevents has already shipped twice. SQLite has no date type: EF stores a
+    /// <c>DateTimeOffset</c> as text, cannot translate a comparison between two of them, and
+    /// refuses to <c>ORDER BY</c> one at all. Both failures happen at runtime, in whichever
+    /// query happens to touch a date — once it was the retention sweep, silently doing
+    /// nothing inside a try/catch for weeks; once it was the whole My groups page returning
+    /// a 500 to every signed-in user.
+    /// </para>
+    ///
+    /// <para>
+    /// An integer compares and sorts correctly in SQL and carries no timezone ambiguity, and
+    /// applying it to the type rather than to named properties means a date column added
+    /// later inherits the fix instead of reintroducing the bug. It is the same rule the money
+    /// columns follow: keep an exact integer in the database and convert at the edge.
+    /// </para>
+    ///
+    /// <para>
+    /// Seconds, not milliseconds. Nothing here needs finer resolution — the coarsest consumer
+    /// is a 90-day cutoff and the finest is a list sorted by when a group was last opened —
+    /// and seconds keep the values already written to <c>LastActivityAt</c> valid, so the
+    /// migration in <see cref="DatabaseSchemaSetup"/> has one less column to rewrite. Where
+    /// two rows do land in the same second, ordering falls back to the Version 7 GUID
+    /// primary key, which is itself time-ordered.
+    /// </para>
+    /// </summary>
+    protected override void ConfigureConventions(ModelConfigurationBuilder configuration)
+    {
+        configuration.Properties<DateTimeOffset>().HaveConversion<UnixSecondsConverter>();
+    }
+
     protected override void OnModelCreating(ModelBuilder model)
     {
         // Every entity here generates its own Version 7 GUID at construction, which keeps new
@@ -30,17 +65,6 @@ public class SplitDbContext(DbContextOptions<SplitDbContext> options) : DbContex
             group.HasKey(g => g.Id);
             group.Property(g => g.Id).ValueGeneratedNever();
 
-            // SQLite has no date type, and EF's SQLite provider cannot translate a comparison
-            // between two DateTimeOffsets at all — a Where(g => g.LastActivityAt < cutoff)
-            // throws rather than returning the wrong rows. The retention sweep is exactly that
-            // comparison, so this is stored as Unix seconds instead: an integer compares and
-            // sorts correctly in SQL, carries no timezone ambiguity, and follows the same rule
-            // the money columns do — keep an exact integer in the database and convert at the
-            // edge. Seconds are plenty; this drives a 90-day cutoff.
-            group.Property(g => g.LastActivityAt)
-                 .HasConversion(
-                     value => value.ToUnixTimeSeconds(),
-                     stored => DateTimeOffset.FromUnixTimeSeconds(stored));
             group.HasIndex(g => g.Slug).IsUnique();
             group.Property(g => g.Slug).HasMaxLength(64);
             group.Property(g => g.Name).HasMaxLength(120);
@@ -115,3 +139,15 @@ public class SplitDbContext(DbContextOptions<SplitDbContext> options) : DbContex
         });
     }
 }
+
+/// <summary>
+/// Stores a <see cref="DateTimeOffset"/> as Unix seconds. Applied to every date in the model
+/// by <see cref="SplitDbContext.ConfigureConventions"/>; see the remarks there for why.
+///
+/// Round-tripping normalises to UTC, which is correct here because every value this
+/// application writes is already <c>DateTimeOffset.UtcNow</c>. A caller storing a local-time
+/// offset would read back the same instant expressed as UTC, not a different moment.
+/// </summary>
+internal sealed class UnixSecondsConverter() : ValueConverter<DateTimeOffset, long>(
+    value => value.ToUnixTimeSeconds(),
+    stored => DateTimeOffset.FromUnixTimeSeconds(stored));
